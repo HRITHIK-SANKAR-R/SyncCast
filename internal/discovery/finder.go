@@ -19,3 +19,4 @@ func GetLocalIP() (string, error) {
 	}
 	return "", errors.New("no local IP address found")
 }
+
