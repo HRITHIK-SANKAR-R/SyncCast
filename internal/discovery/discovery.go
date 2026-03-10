@@ -7,6 +7,15 @@ import (
 )
 
 func DiscoverAllTVs() []Device {
+	return DiscoverTVs(nil)
+}
+
+func DiscoverTVs(manualIPs []string) []Device {
+	if len(manualIPs) > 0 {
+		fmt.Printf("Probing %d manual IP(s)...\n", len(manualIPs))
+		return ManualProbe(manualIPs)
+	}
+
 	myIP, _ := GetLocalIP()
 	fmt.Printf("Your IP: %s\n", myIP)
 	

@@ -9,6 +9,34 @@ import (
 	"time"
 )
 
+func ManualProbe(ips []string) []Device {
+	var devices []Device
+	var mu sync.Mutex
+	var wg sync.WaitGroup
+	seen := make(map[string]bool)
+
+	for _, ip := range ips {
+		wg.Add(1)
+		go func(addr string) {
+			defer wg.Done()
+			if d := ProbeTV(addr); d != nil {
+				mu.Lock()
+				if !seen[d.IP] {
+					devices = append(devices, *d)
+					seen[d.IP] = true
+					fmt.Printf("Found: %s (%s)\n", d.Name, d.IP)
+				}
+				mu.Unlock()
+			} else {
+				fmt.Printf("No TV found at %s\n", addr)
+			}
+		}(ip)
+	}
+
+	wg.Wait()
+	return devices
+}
+
 func ScanSubnet(myIP string) []Device {
 	parts := strings.Split(myIP, ".")
 	if len(parts) != 4 {

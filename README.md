@@ -86,6 +86,7 @@ SyncCast/
 - Friendly name extraction from device XML descriptors
 - Duplicate device deduplication
 - Local IP detection
+- Manual IP probe via `--ip` flag for restricted networks
 
 **What's in progress:**
 
@@ -96,7 +97,7 @@ See the roadmap below.
 ## Roadmap
 
 - [x] Network discovery and endpoint mapping (SSDP + subnet scan)
-- [ ] Manual IP fallback probe for restricted Wi-Fi environments (hostel/university networks)
+- [x] Manual IP fallback probe for restricted Wi-Fi environments (hostel/university networks)
 - [ ] High-performance media engine with HTTP 206 byte-range serving
 - [ ] Real-time WebSocket communication hub
 - [ ] Connection state management — device drops, auto-reconnect
@@ -131,11 +132,26 @@ go build -o synccast ./cmd/synccast
 
 SyncCast will print your local IP, attempt SSDP discovery, and fall back to a subnet scan if needed. Discovered devices are listed with their friendly names and IP addresses.
 
+On restricted networks where auto-discovery is blocked, specify TV IPs directly:
+
+```sh
+./synccast --ip 192.168.1.42
+./synccast --ip 192.168.1.42,192.168.1.50
+```
+
 ---
 
 ## Restricted Network Mode
 
-On networks that block multicast (802.1X enterprise Wi-Fi, captive portals, AP isolation), SSDP will fail silently. SyncCast handles this automatically by scanning the /24 subnet with 50 concurrent goroutines, probing known Smart TV endpoints. A manual IP entry mode is planned for environments where even scanning is restricted.
+On networks that block multicast (802.1X enterprise Wi-Fi, captive portals, AP isolation), SSDP will fail silently. SyncCast handles this automatically by scanning the /24 subnet with 50 concurrent goroutines, probing known Smart TV endpoints.
+
+If even subnet scanning is blocked (AP isolation, client-to-client traffic disabled), use the `--ip` flag to probe specific addresses directly:
+
+```sh
+./synccast --ip 192.168.1.42
+```
+
+You can find your TV's IP in its network settings menu (usually under Settings > Network > Connection Status).
 
 ---
 
