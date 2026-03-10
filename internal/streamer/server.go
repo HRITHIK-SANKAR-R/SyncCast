@@ -8,11 +8,13 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 )
 
 type Server struct {
 	FilePath string
 	Port     int
+	mu       sync.Mutex
 	listener net.Listener
 }
 
@@ -31,19 +33,25 @@ func (s *Server) Start() error {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/media", s.handleMedia)
 
-	var err error
-	s.listener, err = net.Listen("tcp", fmt.Sprintf(":%d", s.Port))
+	ln, err := net.Listen("tcp", fmt.Sprintf(":%d", s.Port))
 	if err != nil {
 		return fmt.Errorf("failed to bind port %d: %w", s.Port, err)
 	}
 
+	s.mu.Lock()
+	s.listener = ln
+	s.mu.Unlock()
+
 	fmt.Printf("Streaming %s on port %d\n", filepath.Base(s.FilePath), s.Port)
-	return http.Serve(s.listener, mux)
+	return http.Serve(ln, mux)
 }
 
 func (s *Server) Stop() error {
-	if s.listener != nil {
-		return s.listener.Close()
+	s.mu.Lock()
+	ln := s.listener
+	s.mu.Unlock()
+	if ln != nil {
+		return ln.Close()
 	}
 	return nil
 }
