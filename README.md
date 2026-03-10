@@ -69,7 +69,7 @@ SyncCast/
 │   ├── state/
 │   │   └── manager.go           # Connection state machine (planned)
 │   └── streamer/
-│       └── server.go            # HTTP media server with Range support (planned)
+│       └── server.go            # HTTP media server with Range support
 ├── go.mod
 ├── LICENSE                      # GPLv3
 └── README.md
@@ -87,6 +87,7 @@ SyncCast/
 - Duplicate device deduplication
 - Local IP detection
 - Manual IP probe via `--ip` flag for restricted networks
+- HTTP media server with byte-range (206) support and MIME detection
 
 **What's in progress:**
 
@@ -98,7 +99,7 @@ See the roadmap below.
 
 - [x] Network discovery and endpoint mapping (SSDP + subnet scan)
 - [x] Manual IP fallback probe for restricted Wi-Fi environments (hostel/university networks)
-- [ ] High-performance media engine with HTTP 206 byte-range serving
+- [x] High-performance media engine with HTTP 206 byte-range serving
 - [ ] Real-time WebSocket communication hub
 - [ ] Connection state management — device drops, auto-reconnect
 - [ ] Interactive TV viewer (HTML5 player served to TV browser)
