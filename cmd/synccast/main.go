@@ -6,6 +6,7 @@ import (
 	"os"
 	"strings"
 
+	"github.com/HRITHIK-SANKAR-R/SyncCast/internal/control"
 	"github.com/HRITHIK-SANKAR-R/SyncCast/internal/discovery"
 	"github.com/HRITHIK-SANKAR-R/SyncCast/internal/streamer"
 )
@@ -56,8 +57,13 @@ func main() {
 		os.Exit(1)
 	}
 
+	hub := control.NewHub()
+	go hub.Run()
+	srv.WSHandler = hub.HandleWS
+
 	myIP, _ := discovery.GetLocalIP()
 	fmt.Printf("\nStream URL: %s\n", srv.StreamURL(myIP))
+	fmt.Printf("WebSocket:  ws://%s:%d/ws\n", myIP, *portFlag)
 
 	if err := srv.Start(); err != nil {
 		fmt.Fprintf(os.Stderr, "Server error: %v\n", err)

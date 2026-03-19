@@ -12,10 +12,11 @@ import (
 )
 
 type Server struct {
-	FilePath string
-	Port     int
-	mu       sync.Mutex
-	listener net.Listener
+	FilePath  string
+	Port      int
+	WSHandler func(http.ResponseWriter, *http.Request)
+	mu        sync.Mutex
+	listener  net.Listener
 }
 
 func New(filePath string, port int) (*Server, error) {
@@ -32,6 +33,9 @@ func (s *Server) StreamURL(hostIP string) string {
 func (s *Server) Start() error {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/media", s.handleMedia)
+	if s.WSHandler != nil {
+		mux.HandleFunc("/ws", s.WSHandler)
+	}
 
 	ln, err := net.Listen("tcp", fmt.Sprintf(":%d", s.Port))
 	if err != nil {
