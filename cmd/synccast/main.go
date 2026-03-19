@@ -3,11 +3,13 @@ package main
 import (
 	"flag"
 	"fmt"
+	"log"
 	"os"
 	"strings"
 
 	"github.com/HRITHIK-SANKAR-R/SyncCast/internal/control"
 	"github.com/HRITHIK-SANKAR-R/SyncCast/internal/discovery"
+	"github.com/HRITHIK-SANKAR-R/SyncCast/internal/state"
 	"github.com/HRITHIK-SANKAR-R/SyncCast/internal/streamer"
 )
 
@@ -58,6 +60,19 @@ func main() {
 	}
 
 	hub := control.NewHub()
+	stateManager := state.NewManager()
+	hub.SetLifecycleHooks(
+		func(role control.Role) {
+			stateManager.OnClientConnected(string(role))
+			s := stateManager.Snapshot()
+			log.Printf("state: %s (remote=%d player=%d)", s.State, s.RemoteClients, s.PlayerClients)
+		},
+		func(role control.Role) {
+			stateManager.OnClientDisconnected(string(role))
+			s := stateManager.Snapshot()
+			log.Printf("state: %s (remote=%d player=%d)", s.State, s.RemoteClients, s.PlayerClients)
+		},
+	)
 	go hub.Run()
 	srv.WSHandler = hub.HandleWS
 

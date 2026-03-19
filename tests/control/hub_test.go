@@ -4,6 +4,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -133,4 +134,39 @@ func TestHubClientCountDecrementsOnDisconnect(t *testing.T) {
 	}
 
 	waitForClientCount(t, hub, 0)
+}
+
+func TestHubLifecycleHooksCalled(t *testing.T) {
+	hub, ts, wsBase := startHubTestServer(t)
+	defer ts.Close()
+	defer hub.Stop()
+
+	var connected int32
+	var disconnected int32
+	hub.SetLifecycleHooks(
+		func(role control.Role) {
+			atomic.AddInt32(&connected, 1)
+		},
+		func(role control.Role) {
+			atomic.AddInt32(&disconnected, 1)
+		},
+	)
+
+	remote := dialRole(t, wsBase, string(control.RoleRemote))
+	waitForClientCount(t, hub, 1)
+
+	if err := remote.Close(); err != nil {
+		t.Fatalf("remote close failed: %v", err)
+	}
+	waitForClientCount(t, hub, 0)
+
+	deadline := time.Now().Add(1 * time.Second)
+	for time.Now().Before(deadline) {
+		if atomic.LoadInt32(&connected) == 1 && atomic.LoadInt32(&disconnected) == 1 {
+			return
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+
+	t.Fatalf("expected hooks called once each, got connected=%d disconnected=%d", connected, disconnected)
 }

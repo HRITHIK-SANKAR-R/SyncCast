@@ -18,11 +18,13 @@ var upgrader = websocket.Upgrader{
 // Hub maintains connected WebSocket clients and routes messages between
 // remotes (mobile PWA) and players (TV browser).
 type Hub struct {
-	mu         sync.RWMutex
-	clients    map[*Client]bool
-	register   chan *Client
-	unregister chan *Client
-	done       chan struct{}
+	mu           sync.RWMutex
+	clients      map[*Client]bool
+	register     chan *Client
+	unregister   chan *Client
+	done         chan struct{}
+	onConnect    func(Role)
+	onDisconnect func(Role)
 }
 
 // NewHub creates a new Hub. Call Run() in a goroutine to start processing.
@@ -51,18 +53,36 @@ func (h *Hub) Run() {
 		case c := <-h.register:
 			h.mu.Lock()
 			h.clients[c] = true
+			onConnect := h.onConnect
 			h.mu.Unlock()
+			if onConnect != nil {
+				onConnect(c.role)
+			}
 			log.Printf("ws: %s connected (%s)", c.role, c.conn.RemoteAddr())
 		case c := <-h.unregister:
 			h.mu.Lock()
+			existed := false
 			if _, ok := h.clients[c]; ok {
+				existed = true
 				delete(h.clients, c)
 				close(c.send)
 			}
+			onDisconnect := h.onDisconnect
 			h.mu.Unlock()
+			if existed && onDisconnect != nil {
+				onDisconnect(c.role)
+			}
 			log.Printf("ws: %s disconnected (%s)", c.role, c.conn.RemoteAddr())
 		}
 	}
+}
+
+// SetLifecycleHooks configures callbacks for client connect/disconnect events.
+func (h *Hub) SetLifecycleHooks(onConnect, onDisconnect func(Role)) {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	h.onConnect = onConnect
+	h.onDisconnect = onDisconnect
 }
 
 // Stop shuts down the Hub, closing all client connections.

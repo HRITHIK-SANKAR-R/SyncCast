@@ -88,6 +88,8 @@ SyncCast/
 - Local IP detection
 - Manual IP probe via `--ip` flag for restricted networks
 - HTTP media server with byte-range (206) support and MIME detection
+- Real-time WebSocket hub with role-based routing (`remote` <-> `player`)
+- Connection state manager with reconnect lifecycle (`idle`, `waiting`, `connected`, `reconnecting`)
 
 **What's in progress:**
 
@@ -100,8 +102,8 @@ See the roadmap below.
 - [x] Network discovery and endpoint mapping (SSDP + subnet scan)
 - [x] Manual IP fallback probe for restricted Wi-Fi environments (hostel/university networks)
 - [x] High-performance media engine with HTTP 206 byte-range serving
-- [ ] Real-time WebSocket communication hub
-- [ ] Connection state management — device drops, auto-reconnect
+- [x] Real-time WebSocket communication hub
+- [x] Connection state management — device drops, auto-reconnect
 - [ ] Interactive TV viewer (HTML5 player served to TV browser)
 - [ ] WakeLock integration to prevent TV sleep during playback
 - [ ] Mobile remote PWA with home-screen install and offline UI caching
