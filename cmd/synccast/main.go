@@ -78,6 +78,7 @@ func main() {
 
 	myIP, _ := discovery.GetLocalIP()
 	fmt.Printf("\nStream URL: %s\n", srv.StreamURL(myIP))
+	fmt.Printf("Player URL: http://%s:%d/player\n", myIP, *portFlag)
 	fmt.Printf("WebSocket:  ws://%s:%d/ws\n", myIP, *portFlag)
 
 	if err := srv.Start(); err != nil {
