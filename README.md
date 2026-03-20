@@ -91,6 +91,7 @@ SyncCast/
 - Real-time WebSocket hub with role-based routing (`remote` <-> `player`)
 - Connection state manager with reconnect lifecycle (`idle`, `waiting`, `connected`, `reconnecting`)
 - Interactive TV viewer page served by SyncCast (`/player`) with HTML5 controls
+- WakeLock integration on TV viewer to reduce sleep interruptions during playback
 
 **What's in progress:**
 
@@ -106,7 +107,7 @@ See the roadmap below.
 - [x] Real-time WebSocket communication hub
 - [x] Connection state management — device drops, auto-reconnect
 - [x] Interactive TV viewer (HTML5 player served to TV browser)
-- [ ] WakeLock integration to prevent TV sleep during playback
+- [x] WakeLock integration to prevent TV sleep during playback
 - [ ] Mobile remote PWA with home-screen install and offline UI caching
 - [ ] CLI toolchain and final integration
 

@@ -211,6 +211,7 @@ func playerPageHTML(fileName string) (string, error) {
 	<script>
 		const video = document.getElementById("video");
 		const statusEl = document.getElementById("status");
+		let wakeLockSentinel = null;
 
 		function wsURL() {
 			const proto = location.protocol === "https:" ? "wss" : "ws";
@@ -218,6 +219,39 @@ func playerPageHTML(fileName string) (string, error) {
 		}
 
 		let ws;
+
+		async function requestWakeLock() {
+			if (!("wakeLock" in navigator)) {
+				return;
+			}
+			if (wakeLockSentinel && !wakeLockSentinel.released) {
+				return;
+			}
+			try {
+				wakeLockSentinel = await navigator.wakeLock.request("screen");
+				wakeLockSentinel.addEventListener("release", () => {
+					wakeLockSentinel = null;
+				});
+				sendStatus("wakelock", { active: true });
+			} catch (_) {
+				sendStatus("wakelock", { active: false });
+			}
+		}
+
+		async function releaseWakeLock() {
+			if (!wakeLockSentinel) {
+				return;
+			}
+			try {
+				await wakeLockSentinel.release();
+			} catch (_) {
+				// Ignore release errors from browser lifecycle races.
+			} finally {
+				wakeLockSentinel = null;
+				sendStatus("wakelock", { active: false });
+			}
+		}
+
 		function connect() {
 			ws = new WebSocket(wsURL());
 
@@ -263,6 +297,16 @@ func playerPageHTML(fileName string) (string, error) {
 							video.currentTime = Math.max(0, msg.data.position);
 						}
 						break;
+					case "back10":
+						video.currentTime = Math.max(0, video.currentTime - 10);
+						break;
+					case "forward10":
+						if (Number.isFinite(video.duration) && video.duration > 0) {
+							video.currentTime = Math.min(video.duration, video.currentTime + 10);
+						} else {
+							video.currentTime = Math.max(0, video.currentTime + 10);
+						}
+						break;
 					case "volume":
 						if (msg.data && typeof msg.data.value === "number") {
 							video.volume = Math.min(1, Math.max(0, msg.data.value));
@@ -284,11 +328,24 @@ func playerPageHTML(fileName string) (string, error) {
 		}
 
 		video.addEventListener("play", () => sendStatus("play", { position: video.currentTime }));
-		video.addEventListener("pause", () => sendStatus("pause", { position: video.currentTime }));
-		video.addEventListener("ended", () => sendStatus("ended", { position: video.currentTime }));
+		video.addEventListener("play", () => requestWakeLock());
+		video.addEventListener("pause", () => {
+			sendStatus("pause", { position: video.currentTime });
+			releaseWakeLock();
+		});
+		video.addEventListener("ended", () => {
+			sendStatus("ended", { position: video.currentTime });
+			releaseWakeLock();
+		});
 		video.addEventListener("volumechange", () => sendStatus("volume", { volume: video.volume, muted: video.muted }));
 		video.addEventListener("timeupdate", () => sendStatus("time", { position: video.currentTime }));
 		video.addEventListener("error", () => sendStatus("error", { code: video.error ? video.error.code : 0 }));
+
+		document.addEventListener("visibilitychange", () => {
+			if (document.visibilityState === "visible" && !video.paused) {
+				requestWakeLock();
+			}
+		});
 
 		connect();
 	</script>

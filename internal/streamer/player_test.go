@@ -43,6 +43,12 @@ func TestHandlePlayer_GetServesHTML(t *testing.T) {
 	if !strings.Contains(body, "role=player") {
 		t.Fatalf("expected player websocket role in script")
 	}
+	if !strings.Contains(body, "navigator.wakeLock.request") {
+		t.Fatalf("expected WakeLock request logic in player page")
+	}
+	if !strings.Contains(body, "case \"back10\"") || !strings.Contains(body, "case \"forward10\"") {
+		t.Fatalf("expected back10/forward10 command handlers in player page")
+	}
 }
 
 func TestHandlePlayer_MethodNotAllowed(t *testing.T) {

@@ -20,6 +20,8 @@ const (
 	ActionPlay   = "play"
 	ActionPause  = "pause"
 	ActionSeek   = "seek"
+	ActionBack10 = "back10"
+	ActionFwd10  = "forward10"
 	ActionVolume = "volume"
 	ActionStop   = "stop"
 )
