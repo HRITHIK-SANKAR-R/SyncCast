@@ -1,7 +1,6 @@
-# If you prefer the allow list template instead of the deny list, see community template:
-# https://github.com/github/gitignore/blob/main/community/Golang/Go.AllowList.gitignore
-#
-# Binaries for programs and plugins
+# --- BINARIES & EXECUTABLES ---
+synccast
+synccast-lite
 *.exe
 *.exe~
 *.dll
@@ -11,35 +10,14 @@
 # Test binary, built with `go test -c`
 *.test
 
-# Code coverage profiles and other test artifacts
+# --- CODE COVERAGE ---
 *.out
 coverage.*
 *.coverprofile
 profile.cov
 
-# Dependency directories (remove the comment below to include it)
-# vendor/
-
-# Go workspace file
-go.work
-go.work.sum
-
-# env file
-.env
-
-# Editor/IDE
-# .idea/
-# --- BINARIES & EXECUTABLES ---
-# This keeps the compiled Go programs out of GitHub
-synccast-lite
-*.exe
-*.exe~
-*.dll
-*.so
-*.dylib
-
-# --- MEDIA FILES (CRITICAL) ---
-# Your team will be testing with movies. DO NOT upload them.
+# --- MEDIA FILES ---
+# Testing with media files — DO NOT upload them
 *.mp4
 *.mkv
 *.avi
@@ -48,17 +26,21 @@ synccast-lite
 *.flac
 
 # --- GO SPECIFIC ---
-# Ignore dependencies (they are managed by go.mod)
 vendor/
 go.sum
+go.work
+go.work.sum
+
+# --- WEB UI ---
+web/node_modules/
+web/dist/
+internal/streamer/web_dist/
 
 # --- IDE & SYSTEM FILES ---
-# Keeps the repo clean of your personal settings
 .vscode/
 .idea/
 .DS_Store
 Thumbs.db
 
 # --- ENVIRONMENT & SECRETS ---
-# If you eventually add API keys or secret tokens
-.env# .vscode/
+.env
