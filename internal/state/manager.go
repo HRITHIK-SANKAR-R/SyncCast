@@ -18,10 +18,10 @@ const (
 
 // Snapshot is a read-only view of the current connection state.
 type Snapshot struct {
-	State             ConnectionState
-	RemoteClients     int
-	PlayerClients     int
-	ReconnectDeadline time.Time
+	State             ConnectionState `json:"state"`
+	RemoteClients     int             `json:"remote_clients"`
+	PlayerClients     int             `json:"player_clients"`
+	ReconnectDeadline time.Time       `json:"reconnect_deadline"`
 }
 
 // Manager tracks connection lifecycle transitions for remote/player clients.
