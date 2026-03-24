@@ -1,7 +1,7 @@
 package discovery
 
 type Device struct {
-	Name     string
-	IP       string
-	Location string
+	Name     string `json:"name"`
+	IP       string `json:"ip"`
+	Location string `json:"location"`
 }
