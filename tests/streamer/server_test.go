@@ -15,8 +15,8 @@ func TestNew_ValidFile(t *testing.T) {
 	if err != nil {
 		t.Fatalf("expected no error, got: %v", err)
 	}
-	if srv.FilePath != f {
-		t.Fatalf("expected FilePath %q, got %q", f, srv.FilePath)
+	if srv.GetFile() != f {
+		t.Fatalf("expected FilePath %q, got %q", f, srv.GetFile())
 	}
 }
 

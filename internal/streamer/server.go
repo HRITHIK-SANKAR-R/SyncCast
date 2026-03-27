@@ -2,30 +2,92 @@ package streamer
 
 import (
 	"bytes"
+	"encoding/json"
 	"fmt"
 	"html/template"
+	"io"
 	"mime"
 	"net"
 	"net/http"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 	"sync"
+
+	"github.com/HRITHIK-SANKAR-R/SyncCast/internal/discovery"
 )
 
-type Server struct {
-	FilePath  string
-	Port      int
-	WSHandler func(http.ResponseWriter, *http.Request)
-	mu        sync.Mutex
-	listener  net.Listener
+// Supported media file extensions for the file browser.
+var mediaExtensions = map[string]bool{
+	".mp4": true, ".mkv": true, ".avi": true, ".mov": true,
+	".webm": true, ".flv": true, ".m4v": true, ".ts": true,
+	".wmv": true, ".mpg": true, ".mpeg": true, ".3gp": true,
+	".mp3": true, ".flac": true, ".wav": true, ".aac": true,
+	".ogg": true, ".m4a": true,
 }
 
+type Server struct {
+	Port          int
+	WSHandler     func(http.ResponseWriter, *http.Request)
+	StateSnapshot func() interface{}
+	DiscoverFunc  func(ips []string) []discovery.Device
+	HostIP        string
+	mu            sync.RWMutex
+	filePath      string
+	devices       []discovery.Device
+	listener      net.Listener
+}
+
+// NewServer creates a server that starts immediately — no file required.
+func NewServer(port int) *Server {
+	return &Server{Port: port}
+}
+
+// New creates a server with a pre-set file (kept for test compatibility).
 func New(filePath string, port int) (*Server, error) {
 	if _, err := os.Stat(filePath); err != nil {
 		return nil, fmt.Errorf("file not found: %s", filePath)
 	}
-	return &Server{FilePath: filePath, Port: port}, nil
+	return &Server{filePath: filePath, Port: port}, nil
+}
+
+// SetFile sets or changes the active streaming file at runtime.
+func (s *Server) SetFile(path string) error {
+	abs, err := filepath.Abs(path)
+	if err != nil {
+		return fmt.Errorf("invalid path: %w", err)
+	}
+	if _, err := os.Stat(abs); err != nil {
+		return fmt.Errorf("file not found: %s", abs)
+	}
+	s.mu.Lock()
+	s.filePath = abs
+	s.mu.Unlock()
+	return nil
+}
+
+// GetFile returns the current file path (thread-safe).
+func (s *Server) GetFile() string {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return s.filePath
+}
+
+// SetDevices updates the discovered device list (thread-safe).
+func (s *Server) SetDevices(devices []discovery.Device) {
+	s.mu.Lock()
+	s.devices = devices
+	s.mu.Unlock()
+}
+
+// GetDevices returns the current device list (thread-safe).
+func (s *Server) GetDevices() []discovery.Device {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	devs := make([]discovery.Device, len(s.devices))
+	copy(devs, s.devices)
+	return devs
 }
 
 func (s *Server) StreamURL(hostIP string) string {
@@ -36,6 +98,19 @@ func (s *Server) Start() error {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/media", s.handleMedia)
 	mux.HandleFunc("/player", s.handlePlayer)
+	mux.HandleFunc("/remote", serveSPA)
+	mux.HandleFunc("/remote/", serveSPA)
+	mux.HandleFunc("/dashboard", serveSPA)
+	mux.HandleFunc("/dashboard/", serveSPA)
+	mux.HandleFunc("/assets/", serveSPA)
+	mux.HandleFunc("/sw.js", serveSPA)
+	mux.HandleFunc("/manifest.json", serveSPA)
+	mux.HandleFunc("/api/info", s.handleAPIInfo)
+	mux.HandleFunc("/api/state", s.handleAPIState)
+	mux.HandleFunc("/api/devices", s.handleAPIDevices)
+	mux.HandleFunc("/api/files", s.handleAPIFiles)
+	mux.HandleFunc("/api/stream", s.handleAPIStream)
+	mux.HandleFunc("/api/discover", s.handleAPIDiscover)
 	if s.WSHandler != nil {
 		mux.HandleFunc("/ws", s.WSHandler)
 	}
@@ -49,7 +124,10 @@ func (s *Server) Start() error {
 	s.listener = ln
 	s.mu.Unlock()
 
-	fmt.Printf("Streaming %s on port %d\n", filepath.Base(s.FilePath), s.Port)
+	file := s.GetFile()
+	if file != "" {
+		fmt.Printf("Streaming %s on port %d\n", filepath.Base(file), s.Port)
+	}
 	return http.Serve(ln, mux)
 }
 
@@ -63,13 +141,24 @@ func (s *Server) Stop() error {
 	return nil
 }
 
+
 func (s *Server) handleMedia(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet && r.Method != http.MethodHead {
 		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
 
-	f, err := os.Open(s.FilePath)
+	filePath := s.GetFile()
+	if filePath == "" {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusServiceUnavailable)
+		json.NewEncoder(w).Encode(map[string]string{
+			"error": "No file selected — pick one from the dashboard",
+		})
+		return
+	}
+
+	f, err := os.Open(filePath)
 	if err != nil {
 		http.Error(w, "File not found", http.StatusNotFound)
 		return
@@ -82,14 +171,12 @@ func (s *Server) handleMedia(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	contentType := detectContentType(s.FilePath)
+	contentType := detectContentType(filePath)
 	w.Header().Set("Content-Type", contentType)
 	w.Header().Set("Accept-Ranges", "bytes")
 	w.Header().Set("Access-Control-Allow-Origin", "*")
 
-	// http.ServeContent handles Range headers, If-Modified-Since,
-	// and responds with 206 Partial Content when appropriate
-	http.ServeContent(w, r, filepath.Base(s.FilePath), stat.ModTime(), f)
+	http.ServeContent(w, r, filepath.Base(filePath), stat.ModTime(), f)
 }
 
 func (s *Server) handlePlayer(w http.ResponseWriter, r *http.Request) {
@@ -98,7 +185,13 @@ func (s *Server) handlePlayer(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	html, err := playerPageHTML(filepath.Base(s.FilePath))
+	filePath := s.GetFile()
+	fileName := "No file selected"
+	if filePath != "" {
+		fileName = filepath.Base(filePath)
+	}
+
+	html, err := playerPageHTML(fileName)
 	if err != nil {
 		http.Error(w, "Internal error", http.StatusInternalServerError)
 		return
@@ -108,6 +201,203 @@ func (s *Server) handlePlayer(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusOK)
 	_, _ = w.Write([]byte(html))
 }
+
+
+func (s *Server) handleAPIInfo(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	filePath := s.GetFile()
+	fileName := ""
+	if filePath != "" {
+		fileName = filepath.Base(filePath)
+	}
+
+	home, _ := os.UserHomeDir()
+
+	w.Header().Set("Content-Type", "application/json")
+	w.Header().Set("Access-Control-Allow-Origin", "*")
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"host":      s.HostIP,
+		"port":      s.Port,
+		"file":      fileName,
+		"file_path": filePath,
+		"streaming": filePath != "",
+		"home":      home,
+	})
+}
+
+func (s *Server) handleAPIState(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.Header().Set("Access-Control-Allow-Origin", "*")
+	if s.StateSnapshot != nil {
+		json.NewEncoder(w).Encode(s.StateSnapshot())
+	} else {
+		json.NewEncoder(w).Encode(map[string]string{"state": "unknown"})
+	}
+}
+
+func (s *Server) handleAPIDevices(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.Header().Set("Access-Control-Allow-Origin", "*")
+	devs := s.GetDevices()
+	if devs == nil {
+		devs = []discovery.Device{}
+	}
+	json.NewEncoder(w).Encode(devs)
+}
+
+func (s *Server) handleAPIFiles(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	dir := r.URL.Query().Get("dir")
+	if dir == "" {
+		dir, _ = os.UserHomeDir()
+	}
+
+	dir, _ = filepath.Abs(dir)
+
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		w.Header().Set("Content-Type", "application/json")
+		w.Header().Set("Access-Control-Allow-Origin", "*")
+		w.WriteHeader(http.StatusBadRequest)
+		json.NewEncoder(w).Encode(map[string]string{"error": "Cannot read directory: " + dir})
+		return
+	}
+
+	type fileEntry struct {
+		Name  string `json:"name"`
+		Path  string `json:"path"`
+		IsDir bool   `json:"is_dir"`
+		Size  int64  `json:"size"`
+	}
+
+	var files []fileEntry
+
+	parent := filepath.Dir(dir)
+	if parent != dir {
+		files = append(files, fileEntry{Name: "..", Path: parent, IsDir: true})
+	}
+
+	var dirs, media []fileEntry
+	for _, entry := range entries {
+		name := entry.Name()
+		if strings.HasPrefix(name, ".") {
+			continue
+		}
+		fullPath := filepath.Join(dir, name)
+		if entry.IsDir() {
+			dirs = append(dirs, fileEntry{Name: name, Path: fullPath, IsDir: true})
+		} else {
+			ext := strings.ToLower(filepath.Ext(name))
+			if mediaExtensions[ext] {
+				info, _ := entry.Info()
+				size := int64(0)
+				if info != nil {
+					size = info.Size()
+				}
+				media = append(media, fileEntry{Name: name, Path: fullPath, Size: size})
+			}
+		}
+	}
+
+	sort.Slice(dirs, func(i, j int) bool { return dirs[i].Name < dirs[j].Name })
+	sort.Slice(media, func(i, j int) bool { return media[i].Name < media[j].Name })
+	files = append(files, dirs...)
+	files = append(files, media...)
+
+	w.Header().Set("Content-Type", "application/json")
+	w.Header().Set("Access-Control-Allow-Origin", "*")
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"dir":   dir,
+		"files": files,
+	})
+}
+
+
+func (s *Server) handleAPIStream(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	var body struct {
+		File string `json:"file"`
+	}
+	data, _ := io.ReadAll(io.LimitReader(r.Body, 4096))
+	if err := json.Unmarshal(data, &body); err != nil || body.File == "" {
+		w.Header().Set("Content-Type", "application/json")
+		w.Header().Set("Access-Control-Allow-Origin", "*")
+		w.WriteHeader(http.StatusBadRequest)
+		json.NewEncoder(w).Encode(map[string]string{"error": "Provide a valid file path"})
+		return
+	}
+
+	if err := s.SetFile(body.File); err != nil {
+		w.Header().Set("Content-Type", "application/json")
+		w.Header().Set("Access-Control-Allow-Origin", "*")
+		w.WriteHeader(http.StatusBadRequest)
+		json.NewEncoder(w).Encode(map[string]string{"error": err.Error()})
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	w.Header().Set("Access-Control-Allow-Origin", "*")
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"ok":   true,
+		"file": filepath.Base(body.File),
+		"path": body.File,
+	})
+}
+
+
+func (s *Server) handleAPIDiscover(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	if s.DiscoverFunc == nil {
+		w.Header().Set("Content-Type", "application/json")
+		w.Header().Set("Access-Control-Allow-Origin", "*")
+		w.WriteHeader(http.StatusInternalServerError)
+		json.NewEncoder(w).Encode(map[string]string{"error": "Discovery not available"})
+		return
+	}
+
+	var body struct {
+		IPs []string `json:"ips"`
+	}
+	data, _ := io.ReadAll(io.LimitReader(r.Body, 4096))
+	if len(data) > 0 {
+		json.Unmarshal(data, &body)
+	}
+
+	devices := s.DiscoverFunc(body.IPs)
+	s.SetDevices(devices)
+
+	w.Header().Set("Content-Type", "application/json")
+	w.Header().Set("Access-Control-Allow-Origin", "*")
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"ok":      true,
+		"count":   len(devices),
+		"devices": devices,
+	})
+}
+
 
 func playerPageHTML(fileName string) (string, error) {
 	const page = `<!doctype html>
@@ -368,12 +658,10 @@ func playerPageHTML(fileName string) (string, error) {
 func detectContentType(path string) string {
 	ext := strings.ToLower(filepath.Ext(path))
 
-	// Prefer mime.TypeByExtension for well-known media types
 	if ct := mime.TypeByExtension(ext); ct != "" {
 		return ct
 	}
 
-	// Fallback for types not always in the system MIME database
 	switch ext {
 	case ".mkv":
 		return "video/x-matroska"
